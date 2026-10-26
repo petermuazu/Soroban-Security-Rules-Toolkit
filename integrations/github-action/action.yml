@@ -30,7 +30,7 @@ inputs:
     description: Where to write the SARIF report.
     default: stellar-guard.sarif
   upload-sarif:
-    description: Upload the SARIF report to GitHub code scanning (needs `security-events: write`).
+    description: "Upload the SARIF report to GitHub code scanning (needs `security-events: write`)."
     default: "true"
   annotations:
     description: Emit inline annotations on the pull request diff.
@@ -141,8 +141,10 @@ runs:
         extra=($SG_ARGS)
         # shellcheck disable=SC2206
         paths=($SG_PATHS)
-        stellar-guard "${args[@]}" "${extra[@]}" -- "${paths[@]}"
-        code=$?
+        # GitHub runs `shell: bash` with `-e`; capture the exit code instead of aborting so the
+        # output is always set and "Fail on findings" decides the outcome.
+        code=0
+        stellar-guard "${args[@]}" "${extra[@]}" -- "${paths[@]}" || code=$?
         echo "exit-code=$code" >> "$GITHUB_OUTPUT"
         if [ "$SG_SUMMARY" = "true" ] && [ -f "$summary_file" ]; then
           cat "$summary_file" >> "$GITHUB_STEP_SUMMARY"
