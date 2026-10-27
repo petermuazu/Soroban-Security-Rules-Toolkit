@@ -8,12 +8,13 @@
 use std::fs;
 use std::io::{IsTerminal, Write};
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command as ProcessCommand, ExitCode};
 use std::time::Instant;
 
 use anyhow::{bail, Context, Result};
 use clap::{Args, Parser, Subcommand, ValueEnum};
 use guard_engine::{Confidence, Config, Engine, FailOn, Settings, Severity, DEFAULT_CONFIG_TOML, DISCLAIMER};
+use guard_parser::{DiscoverOptions, Project};
 use guard_reporters::{render, Format, RenderOptions};
 
 const EXIT_FINDINGS: u8 = 1;
@@ -127,6 +128,10 @@ struct ScanArgs {
     #[arg(long)]
     include_tests: bool,
 
+    /// Expand each Cargo crate with `cargo expand` before scanning.
+    #[arg(long)]
+    expand_macros: bool,
+
     /// Treat these functions as authorization checks (comma separated or repeated).
     #[arg(long = "auth-fn", value_delimiter = ',')]
     auth_functions: Vec<String>,
@@ -236,6 +241,68 @@ fn write_file(path: &Path, contents: &str) -> Result<()> {
     fs::write(path, contents).with_context(|| format!("failed to write {}", path.display()))
 }
 
+fn expand_macros(project: &mut Project, include_tests: bool) {
+    let mut outside_cargo_package = false;
+    for crate_id in 0..project.crates.len() {
+        if !project.files.iter().any(|file| file.crate_id == crate_id) {
+            continue;
+        }
+        let Some(root) = project.crates[crate_id].root.clone() else {
+            outside_cargo_package = true;
+            continue;
+        };
+        let output = match ProcessCommand::new("cargo").arg("expand").current_dir(&root).output() {
+            Ok(output) => output,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                eprintln!("stellar-guard: cargo is not available; scanning unexpanded source");
+                return;
+            }
+            Err(error) => {
+                eprintln!(
+                    "stellar-guard: could not run cargo expand in {}: {error}; scanning unexpanded source",
+                    root.display()
+                );
+                continue;
+            }
+        };
+        if !output.status.success() {
+            let message =
+                format!("{}{}", String::from_utf8_lossy(&output.stderr), String::from_utf8_lossy(&output.stdout));
+            let lower = message.to_ascii_lowercase();
+            if (lower.contains("no such command") && lower.contains("expand"))
+                || lower.contains("could not find `expand`")
+            {
+                eprintln!("stellar-guard: cargo-expand is not installed; scanning unexpanded source");
+                return;
+            }
+            eprintln!(
+                "stellar-guard: cargo expand failed in {}: {}; scanning unexpanded source",
+                root.display(),
+                message.trim()
+            );
+            continue;
+        }
+        let expanded = String::from_utf8_lossy(&output.stdout);
+        if expanded.trim().is_empty() {
+            eprintln!(
+                "stellar-guard: cargo expand produced no source in {}; scanning unexpanded source",
+                root.display()
+            );
+            continue;
+        }
+        if let Err(error) = project.replace_crate_with_expanded_source(crate_id, &expanded, include_tests) {
+            eprintln!(
+                "stellar-guard: could not parse expanded source for {}: {}; scanning unexpanded source",
+                root.display(),
+                error.message
+            );
+        }
+    }
+    if outside_cargo_package {
+        eprintln!("stellar-guard: sources outside Cargo packages were scanned without macro expansion");
+    }
+}
+
 fn scan(args: ScanArgs, color: bool) -> Result<ExitCode> {
     let started = Instant::now();
     let config_path = find_config(&args);
@@ -247,7 +314,23 @@ fn scan(args: ScanArgs, color: bool) -> Result<ExitCode> {
         }
     }
 
-    let report = engine().scan(&args.paths, &settings)?;
+    let analyzer = engine();
+    let report = if args.expand_macros {
+        analyzer.validate(&settings)?;
+        let discover = DiscoverOptions { exclude: settings.exclude.clone(), include_tests: settings.include_tests };
+        let mut project = Project::load(&args.paths, &discover)?;
+        if project.files.is_empty() && project.failures.is_empty() {
+            let shown: Vec<_> = args.paths.iter().map(|p| p.display().to_string()).collect();
+            bail!(
+                "no Rust source files found in {} (test code is skipped unless --include-tests is given)",
+                shown.join(", ")
+            );
+        }
+        expand_macros(&mut project, settings.include_tests);
+        analyzer.scan_project(&project, &settings)
+    } else {
+        analyzer.scan(&args.paths, &settings)?
+    };
 
     let to_stdout = args.output.is_none();
     let main_opts = RenderOptions { color: color && to_stdout && args.format == Format::Text };

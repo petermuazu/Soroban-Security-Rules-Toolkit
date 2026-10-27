@@ -253,3 +253,34 @@ fn test_support_crates_are_skipped_unless_tests_are_included() {
     scan(&[p]).code(2).stderr(predicate::str::contains("--include-tests"));
     scan(&[p, "--include-tests"]).code(1).stdout(predicate::str::contains("warning[SG-001]"));
 }
+
+#[test]
+fn expand_macros_finds_macro_generated_storage_write_when_available() {
+    let dir = tempfile::tempdir().unwrap();
+    fs::create_dir_all(dir.path().join("src")).unwrap();
+    fs::write(
+        dir.path().join("Cargo.toml"),
+        "[package]\nname = \"macro-contract\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+    )
+    .unwrap();
+    fs::write(
+        dir.path().join("src/lib.rs"),
+        "struct Env;\nstruct Storage;\nimpl Env { fn storage(&self) -> Storage { Storage } }\n\
+impl Storage { fn temporary(&self) -> Self { Self } fn set<K, V>(&self, _: &K, _: &V) {} }\n\
+enum DataKey { Admin }\n\
+macro_rules! write_admin { ($e:expr) => { $e.storage().temporary().set(&DataKey::Admin, &1); }; }\n\
+pub fn update(e: Env) { write_admin!(e); }\n",
+    )
+    .unwrap();
+
+    let output = scan(&[dir.path().to_str().unwrap(), "--expand-macros", "--rule", "SG-002"]).get_output().clone();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    if stderr.contains("cargo-expand is not installed") || stderr.contains("cargo is not available") {
+        assert_eq!(output.status.code(), Some(0));
+    } else {
+        assert_eq!(output.status.code(), Some(1), "{stderr}");
+        assert!(stdout.contains("warning[SG-002]"), "{stdout}");
+        assert!(stdout.contains("(cargo expand)"), "{stdout}");
+    }
+}

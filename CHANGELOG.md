@@ -58,6 +58,8 @@ are listed under **Changed**.
 
 ### Added
 
+- Optional `scan --expand-macros` analysis via `cargo-expand`, with graceful fallback to source
+  scanning when expansion is unavailable or fails.
 - SG-010 `missing-admin-events` (info): exported privileged-key writes and contract upgrades
   without a Soroban event.
 - SG-006 `negative-amount`: `i128` parameters written to storage without a sign check.

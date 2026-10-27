@@ -147,6 +147,34 @@ impl Project {
         }
         project
     }
+
+    /// Replaces a crate's discovered files with the crate-wide output of
+    /// `cargo expand`. Findings use the primary source file's path; line numbers
+    /// refer to expanded output.
+    pub fn replace_crate_with_expanded_source(
+        &mut self,
+        crate_id: usize,
+        text: &str,
+        include_tests: bool,
+    ) -> Result<(), ParseFailure> {
+        let Some(first) = self.files.iter().find(|f| f.crate_id == crate_id) else {
+            return Ok(());
+        };
+        let primary = ["src/lib.rs", "src/main.rs", "lib.rs", "main.rs"]
+            .into_iter()
+            .find(|path| self.files.iter().any(|f| f.crate_id == crate_id && f.path.ends_with(*path)));
+        let original = primary
+            .and_then(|path| self.files.iter().find(|f| f.crate_id == crate_id && f.path.ends_with(path)))
+            .unwrap_or(first);
+        let path = original.path.clone();
+        let display_path = format!("{} (cargo expand)", original.display_path);
+        let (ast, _) =
+            parse_source(text, include_tests).map_err(|error| parse_failure(display_path.clone(), &error))?;
+        self.files.retain(|f| f.crate_id != crate_id);
+        self.files.push(SourceFile { path, display_path, text: text.to_string(), ast, crate_id });
+        self.files.sort_by(|a, b| (&a.crate_id, &a.display_path).cmp(&(&b.crate_id, &b.display_path)));
+        Ok(())
+    }
 }
 
 fn parse_failure(file: String, err: &syn::Error) -> ParseFailure {

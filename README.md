@@ -182,8 +182,9 @@ Details: [docs/architecture.md](docs/architecture.md). Noise on real code: [docs
 
 ## Limitations
 
-* No type information or macro expansion: rules rely on names and syntax and can miss renamed or
-  indirect patterns, or flag safe code. Confidence levels reflect this.
+* No type information; macro expansion is opt-in via `scan --expand-macros` and requires
+  [`cargo-expand`](https://github.com/dtolnay/cargo-expand). Without it, rules rely on names and
+  syntax and can miss renamed or indirect patterns, or flag safe code. Confidence levels reflect this.
 * Helper functions are resolved by name within one crate; logic in other crates is not followed.
 * Rules check that a protection *exists*, not that it is *correct* (e.g. that the right address
   is authorized).

@@ -102,9 +102,12 @@ Renders a `ScanReport`:
 
 ## Design decisions
 
-* **Source-level, no compilation.** Works on any checkout without building the contract or its
-  dependencies, in milliseconds. The trade-off is no type information and no macro expansion; rules
-  compensate with naming heuristics and report a confidence level.
+* **Source-level by default.** Works on any checkout without building the contract or its
+  dependencies, in milliseconds. `scan --expand-macros` optionally runs `cargo expand` once per
+  Cargo crate before analysis; unavailable or failing expansions fall back to the original source.
+  Findings from expanded output use the crate's primary source path and expanded line numbers.
+  Analysis still has no type information, so rules compensate with naming heuristics and report a
+  confidence level.
 * **Call resolution by name, narrowed by path.** A call matches same-named functions, narrowed by
   its qualifier (`a::f` → module or type `a`, `Self::f` → the caller's impl, `<T as Tr>::f` →
   trait `Tr`, `dep::f` → dependency crate `dep`) or, unqualified, by the caller's module and crate.
