@@ -88,6 +88,8 @@ impl Rule for MissingAuthorization {
             if auth != AuthStatus::Never {
                 if let Some(d) = wrong_subject(model, id, f) {
                     out.push(d);
+                } else if let Some(d) = self_authorized(model, id, f, &privileged) {
+                    out.push(d);
                 }
                 out.extend(narrow_auth_args(model, id, f));
             }
@@ -282,6 +284,119 @@ fn wrong_subject(model: &guard_parser::CrateModel<'_>, id: usize, f: &guard_pars
         )));
     }
     None
+}
+
+/// Reports an upgrade or privileged write whose only authorization is `require_auth()`
+/// on caller-supplied address parameters that are never checked against anything
+/// (`caller.require_auth(); set(&DataKey::Admin, &new_admin)`). Anyone can pass and
+/// sign for their own address, so the check proves nothing.
+///
+/// Conservative: any other use of the authorized parameter (a comparison, a role-check
+/// helper call, a storage key, an `assert!`) counts as a check, and a write keyed by
+/// the authorized parameter (per-user data the caller owns) is not reported.
+fn self_authorized(
+    model: &guard_parser::CrateModel<'_>,
+    id: usize,
+    f: &guard_parser::FnDef<'_>,
+    privileged: &[String],
+) -> Option<Diagnostic> {
+    let auth = model.subject_auth(id);
+    if auth.other || auth.params.is_empty() {
+        return None;
+    }
+    let params = f.params();
+    let names: Vec<String> = auth.params.iter().filter_map(|&i| params.get(i).map(|(n, _)| n.clone())).collect();
+    if names.len() != auth.params.len() || names.iter().any(|n| uses_besides_auth(f.block, n) > 0) {
+        return None;
+    }
+    let lowered: Vec<String> = names.iter().map(|n| n.to_lowercase()).collect();
+    let (what, witness) = model
+        .witness(id, &|_, facts| facts.upgrades.first().copied())
+        .map(|w| ("upgrades the contract WASM", w))
+        .or_else(|| {
+            model
+                .witness(id, &|_, facts| {
+                    facts
+                        .state_writes
+                        .iter()
+                        .find(|w| {
+                            w.key_idents.last().is_some_and(|i| has_word(i, privileged))
+                                && !w.key_locals.iter().any(|l| lowered.contains(l))
+                        })
+                        .map(|w| w.span)
+                })
+                .map(|w| ("modifies privileged configuration", w))
+        })?;
+    let via = if witness.via.is_empty() { String::new() } else { format!(" (via `{}`)", witness.via.join("` → `")) };
+    let shown: Vec<String> = names.iter().map(|n| format!("`{n}`")).collect();
+    let message = format!(
+        "Exported function `{}` {what}{via}, but its only authorization is `require_auth()` on caller-supplied {}, \
+which is never checked against a stored admin or role",
+        f.name,
+        shown.join(", ")
+    );
+    Some(Diagnostic::new(witness.span, message, Confidence::High).in_function(&f.name).with_help(format!(
+        "Anyone can pass their own address as {} and sign for it. Load the stored admin and call \
+`admin.require_auth()`, or compare {} with it before the change.",
+        shown.join(", "),
+        shown.join(", ")
+    )))
+}
+
+/// Number of uses of the parameter `name` in `block`, other than as the receiver of
+/// `require_auth()` / `require_auth_for_args(..)` or inside an event publication.
+/// Uses inside macros (`assert_eq!(caller, admin)`) count.
+fn uses_besides_auth(block: &syn::Block, name: &str) -> usize {
+    use syn::visit::Visit;
+    struct Uses<'n> {
+        name: &'n str,
+        count: usize,
+    }
+    impl<'ast> Visit<'ast> for Uses<'_> {
+        fn visit_expr_method_call(&mut self, m: &'ast syn::ExprMethodCall) {
+            let method = m.method.to_string();
+            if method.starts_with("require_auth") && is_path_named(&m.receiver, self.name) {
+                for arg in &m.args {
+                    self.visit_expr(arg);
+                }
+                return;
+            }
+            if method == "publish" && receiver_chain_has(&m.receiver, "events") {
+                return;
+            }
+            syn::visit::visit_expr_method_call(self, m);
+        }
+        fn visit_path(&mut self, p: &'ast syn::Path) {
+            if p.is_ident(self.name) {
+                self.count += 1;
+            }
+            syn::visit::visit_path(self, p);
+        }
+        fn visit_macro(&mut self, mac: &'ast syn::Macro) {
+            let text = mac.tokens.to_string();
+            self.count += text.split(|c: char| !(c.is_alphanumeric() || c == '_')).filter(|w| *w == self.name).count();
+        }
+    }
+    let mut v = Uses { name, count: 0 };
+    v.visit_block(block);
+    v.count
+}
+
+fn is_path_named(expr: &syn::Expr, name: &str) -> bool {
+    match expr {
+        syn::Expr::Path(p) => p.path.is_ident(name),
+        syn::Expr::Reference(r) => is_path_named(&r.expr, name),
+        syn::Expr::Paren(p) => is_path_named(&p.expr, name),
+        syn::Expr::MethodCall(m) if m.method == "clone" => is_path_named(&m.receiver, name),
+        _ => false,
+    }
+}
+
+fn receiver_chain_has(expr: &syn::Expr, method: &str) -> bool {
+    match expr {
+        syn::Expr::MethodCall(m) => m.method == method || receiver_chain_has(&m.receiver, method),
+        _ => false,
+    }
 }
 
 /// Reports `require_auth_for_args(..)` calls whose argument list includes none of
@@ -708,5 +823,96 @@ impl Gov {
             "#[contractimpl] impl C { pub fn initialize(e: Env, a: Address) { e.storage().instance().set(&K::Admin, &a); } }",
         );
         assert!(f.is_empty());
+    }
+
+    // ---- self-authorization: `caller.require_auth()` with an unchecked caller ----
+
+    #[test]
+    fn flags_admin_write_authorized_only_by_unchecked_caller() {
+        let f = check(
+            r#"
+#[contractimpl]
+impl C {
+    pub fn set_admin(e: Env, caller: Address, new_admin: Address) {
+        caller.require_auth();
+        e.storage().instance().set(&DataKey::Admin, &new_admin);
+        e.events().publish((symbol_short!("admin"), caller), new_admin);
+    }
+}
+"#,
+        );
+        assert_eq!(f.len(), 1, "{f:#?}");
+        assert_eq!(f[0].confidence, Confidence::High);
+        assert_eq!(f[0].severity, Severity::Warning);
+        assert!(f[0].message.contains("caller-supplied `caller`"), "{}", f[0].message);
+    }
+
+    #[test]
+    fn flags_upgrade_authorized_only_by_unchecked_caller_via_helper_write() {
+        let f = check(
+            r#"
+fn do_upgrade(e: &Env, h: BytesN<32>) { e.deployer().update_current_contract_wasm(h); }
+#[contractimpl]
+impl C {
+    pub fn upgrade(e: Env, operator: Address, hash: BytesN<32>) {
+        operator.require_auth();
+        do_upgrade(&e, hash);
+    }
+}
+"#,
+        );
+        assert_eq!(f.len(), 1, "{f:#?}");
+        assert!(f[0].message.contains("upgrades the contract WASM (via `do_upgrade`)"), "{}", f[0].message);
+    }
+
+    #[test]
+    fn caller_checked_against_stored_admin_is_not_reported() {
+        let f = check(
+            r#"
+fn admin(e: &Env) -> Address { e.storage().instance().get(&DataKey::Admin).unwrap() }
+fn ensure_role(e: &Env, who: &Address) { if !e.storage().persistent().has(&DataKey::Role(who.clone())) { panic!() } }
+#[contractimpl]
+impl C {
+    pub fn set_a(e: Env, caller: Address, a: Address) {
+        caller.require_auth();
+        if caller != admin(&e) { panic!("not admin") }
+        e.storage().instance().set(&DataKey::Admin, &a);
+    }
+    pub fn set_b(e: Env, caller: Address, a: Address) {
+        caller.require_auth();
+        assert_eq!(caller, admin(&e));
+        e.storage().instance().set(&DataKey::Admin, &a);
+    }
+    pub fn set_c(e: Env, caller: Address, a: Address) {
+        caller.require_auth();
+        ensure_role(&e, &caller);
+        e.storage().instance().set(&DataKey::Owner, &a);
+    }
+}
+"#,
+        );
+        assert!(f.is_empty(), "{f:#?}");
+    }
+
+    #[test]
+    fn self_keyed_privileged_write_and_stored_admin_auth_are_not_reported() {
+        let f = check(
+            r#"
+fn admin(e: &Env) -> Address { e.storage().instance().get(&DataKey::Admin).unwrap() }
+#[contractimpl]
+impl C {
+    // Each operator registers its own settings.
+    pub fn set_operator_fee(e: Env, operator: Address, fee: u32) {
+        operator.require_auth();
+        e.storage().persistent().set(&DataKey::Operator(operator), &fee);
+    }
+    pub fn set_admin(e: Env, a: Address) {
+        admin(&e).require_auth();
+        e.storage().instance().set(&DataKey::Admin, &a);
+    }
+}
+"#,
+        );
+        assert!(f.is_empty(), "{f:#?}");
     }
 }

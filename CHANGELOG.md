@@ -9,6 +9,10 @@ are listed under **Changed**.
 
 ### Changed
 
+- SG-001 reports upgrades and privileged writes whose only authorization is `require_auth()` on a
+  caller-supplied address that is never checked against a stored admin or role
+  (`caller.require_auth(); set(&DataKey::Admin, &new_admin)`). No new findings on the four
+  validation codebases.
 - Packages are renamed for crates.io: the CLI package is `stellar-guard` (was `guard-cli`; use
   `-p stellar-guard`), libraries are `stellar-guard-*`. Rust import paths (`guard_engine`, …) are unchanged.
 - SG-001 no longer trusts a helper because of its name alone (`require_admin`, `check_owner_auth`, …)
