@@ -66,7 +66,7 @@ fn json_output_is_valid_and_deterministic() {
     assert_eq!(v["schema_version"], "1.0");
     assert_eq!(v["tool"]["name"], "stellar-guard");
     let findings = v["findings"].as_array().unwrap();
-    assert_eq!(findings.len(), 60);
+    assert_eq!(findings.len(), 61);
     for f in findings {
         assert!(f["location"]["start_line"].as_u64().unwrap() > 0);
         assert_eq!(f["fingerprint"].as_str().unwrap().len(), 16);
@@ -204,14 +204,21 @@ fn errors_exit_2() {
 }
 
 #[test]
-fn parse_failures_are_reported_not_fatal() {
+fn parse_failures_fail_the_scan_unless_allowed() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(dir.path().join("broken.rs"), "fn x( {").unwrap();
     fs::write(dir.path().join("ok.rs"), "use soroban_sdk::Env; fn y() {}").unwrap();
-    scan(&[dir.path().to_str().unwrap()])
-        .code(0)
+    let path = dir.path().to_str().unwrap();
+    // The other files are still analyzed and reported; the run fails because it is incomplete.
+    scan(&[path])
+        .code(1)
         .stdout(predicate::str::contains("could not analyze"))
-        .stdout(predicate::str::contains("1 file could not be parsed"));
+        .stdout(predicate::str::contains("1 file could not be parsed"))
+        .stderr(predicate::str::contains("this scan is incomplete"));
+    scan(&[path, "--allow-parse-failures"]).code(0).stdout(predicate::str::contains("could not analyze"));
+    scan(&[path, "--fail-on", "never"]).code(0);
+    fs::write(dir.path().join("stellar-guard.toml"), "allow-parse-failures = true\n").unwrap();
+    bin().arg("scan").arg(path).arg("--config").arg(dir.path().join("stellar-guard.toml")).assert().code(0);
 }
 
 #[test]

@@ -102,7 +102,7 @@ stellar-guard init                                   # write a default stellar-g
 | Exit code | Meaning |
 |---|---|
 | `0` | No finding at or above `--fail-on` (default `warning`) |
-| `1` | At least one finding at or above `--fail-on` |
+| `1` | At least one finding at or above `--fail-on`, or a file could not be parsed (unless `--allow-parse-failures` or `--fail-on never`) |
 | `2` | Usage, configuration or I/O error |
 
 Output formats: `text` (default), `json`, `sarif`, `github` (PR annotations) and `markdown`.

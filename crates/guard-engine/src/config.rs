@@ -43,6 +43,7 @@ pub struct Config {
     pub fail_on: Option<FailOn>,
     pub min_confidence: Option<Confidence>,
     pub include_tests: Option<bool>,
+    pub allow_parse_failures: Option<bool>,
     #[serde(default)]
     pub exclude: Vec<String>,
     #[serde(default)]
@@ -85,6 +86,8 @@ pub struct Settings {
     pub fail_on: FailOn,
     pub min_confidence: Confidence,
     pub include_tests: bool,
+    /// Files that cannot be parsed do not fail the scan.
+    pub allow_parse_failures: bool,
     pub exclude: Vec<String>,
     pub auth_functions: Vec<String>,
     pub rules: BTreeMap<String, RuleConfig>,
@@ -98,6 +101,7 @@ impl Default for Settings {
             fail_on: FailOn::default(),
             min_confidence: Confidence::Low,
             include_tests: false,
+            allow_parse_failures: false,
             exclude: Vec::new(),
             auth_functions: Vec::new(),
             rules: BTreeMap::new(),
@@ -112,6 +116,7 @@ impl From<Config> for Settings {
             fail_on: c.fail_on.unwrap_or_default(),
             min_confidence: c.min_confidence.unwrap_or(Confidence::Low),
             include_tests: c.include_tests.unwrap_or(false),
+            allow_parse_failures: c.allow_parse_failures.unwrap_or(false),
             exclude: c.exclude,
             auth_functions: c.auth_functions,
             rules: c.rules.into_iter().fold(BTreeMap::new(), |mut acc, (k, v)| {
@@ -168,6 +173,10 @@ min-confidence = "low"
 
 # Analyze test code (`#[cfg(test)]`, `tests/`, `benches/`) as well.
 include-tests = false
+
+# Files stellar-guard cannot parse are not analyzed. By default they fail the scan (unless
+# `fail-on = "never"`) so an unanalyzed file never passes CI silently.
+allow-parse-failures = false
 
 # Extra glob patterns to skip, relative to each scanned path.
 exclude = []

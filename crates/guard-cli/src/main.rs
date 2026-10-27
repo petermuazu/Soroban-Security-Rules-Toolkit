@@ -51,7 +51,7 @@ enum ColorChoice {
 #[derive(Subcommand)]
 enum Command {
     /// Scan contract sources and report findings.
-    Scan(ScanArgs),
+    Scan(Box<ScanArgs>),
     /// List available rules.
     Rules {
         /// Output format.
@@ -128,6 +128,10 @@ struct ScanArgs {
     #[arg(long)]
     include_tests: bool,
 
+    /// Do not fail the scan when some files cannot be parsed (they are still reported).
+    #[arg(long)]
+    allow_parse_failures: bool,
+
     /// Expand each Cargo crate with `cargo expand` before scanning.
     #[arg(long)]
     expand_macros: bool,
@@ -178,7 +182,7 @@ fn main() -> ExitCode {
         ColorChoice::Auto => std::io::stdout().is_terminal() && std::env::var_os("NO_COLOR").is_none(),
     };
     let result = match cli.command {
-        Command::Scan(args) => scan(args, color),
+        Command::Scan(args) => scan(*args, color),
         Command::Rules { format } => list_rules(&format).map(|_| ExitCode::SUCCESS),
         Command::Explain { rule } => explain(&rule).map(|_| ExitCode::SUCCESS),
         Command::Init { force, dir } => init(&dir, force).map(|_| ExitCode::SUCCESS),
@@ -219,6 +223,9 @@ fn build_settings(args: &ScanArgs, config_path: Option<&Path>) -> Result<Setting
     }
     if args.include_tests {
         settings.include_tests = true;
+    }
+    if args.allow_parse_failures {
+        settings.allow_parse_failures = true;
     }
     settings.exclude.extend(args.exclude.iter().cloned());
     settings.auth_functions.extend(args.auth_functions.iter().cloned());
@@ -349,6 +356,17 @@ fn scan(args: ScanArgs, color: bool) -> Result<ExitCode> {
     }
 
     let fails = report.fails(settings.fail_on);
+    let incomplete =
+        !report.parse_failures.is_empty() && settings.fail_on != FailOn::Never && !settings.allow_parse_failures;
+    if incomplete {
+        let n = report.parse_failures.len();
+        eprintln!(
+            "error: {n} {} could not be parsed and {} not analyzed, so this scan is incomplete \
+(use --allow-parse-failures to accept this)",
+            if n == 1 { "file" } else { "files" },
+            if n == 1 { "was" } else { "were" }
+        );
+    }
     if !args.quiet && (args.output.is_some() || args.format != Format::Text) {
         let s = &report.summary;
         eprintln!(
@@ -364,7 +382,7 @@ fn scan(args: ScanArgs, color: bool) -> Result<ExitCode> {
     if args.verbose {
         eprintln!("stellar-guard: finished in {:.2?}", started.elapsed());
     }
-    Ok(if fails { ExitCode::from(EXIT_FINDINGS) } else { ExitCode::SUCCESS })
+    Ok(if fails || incomplete { ExitCode::from(EXIT_FINDINGS) } else { ExitCode::SUCCESS })
 }
 
 fn list_rules(format: &str) -> Result<()> {
