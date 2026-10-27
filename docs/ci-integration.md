@@ -16,7 +16,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: petermuazu/Soroban-Security-Rules-Toolkit/integrations/github-action@v0.1.0
+      - uses: petermuazu/Soroban-Security-Rules-Toolkit/integrations/github-action@main  # pin to a release tag once v0.1.0 is published
         with:
           path: contracts
           fail-on: warning
@@ -60,22 +60,23 @@ stellar-guard:
 
 ## Docker
 
-The image `ghcr.io/petermuazu/stellar-guard` contains only the static binary (about 8 MB). Mount the
-project at `/src`:
+The image contains only the static binary (about 8 MB). Until the first release, build it from the
+repository; mount the project at `/src`:
 
 ```sh
-docker run --rm -v "$PWD:/src" ghcr.io/petermuazu/stellar-guard scan . --format sarif -o stellar-guard.sarif
+docker build -t stellar-guard https://github.com/petermuazu/Soroban-Security-Rules-Toolkit.git
+docker run --rm -v "$PWD:/src" stellar-guard scan . --format sarif -o stellar-guard.sarif
 ```
 
-Images are tagged with the release version (`0.2.0`, `0.2`) and `latest`, and carry signed build
-provenance and an SBOM.
+From v0.1.0 on, the release workflow publishes `ghcr.io/petermuazu/stellar-guard`, tagged with the
+release version (`0.1.0`, `0.1`) and `latest`, with signed build provenance and an SBOM.
 
 ## pre-commit
 
 ```yaml
 repos:
   - repo: https://github.com/petermuazu/Soroban-Security-Rules-Toolkit
-    rev: v0.2.0
+    rev: <commit-sha>   # a release tag once v0.1.0 is published
     hooks:
       - id: stellar-guard
         args: [--fail-on, error]   # optional; extra arguments go after `stellar-guard scan`

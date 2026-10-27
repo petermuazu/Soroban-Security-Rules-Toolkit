@@ -7,6 +7,11 @@ are listed under **Changed**.
 
 ## [Unreleased]
 
+### Fixed
+
+- Install docs no longer point to releases, crates.io packages, container images or action tags that
+  have not been published yet; they show how to install from source until v0.1.0.
+
 ### Changed
 
 - Packages are renamed for crates.io: the CLI package is `stellar-guard` (was `guard-cli`; use

@@ -52,37 +52,36 @@ Soroban projects (held out: 11 / 21 before tuning, 17 / 21 after).
 
 ## Install
 
-Prebuilt binary (Linux, macOS, Windows), from crates.io or with Docker (from v0.2.0):
-
-```sh
-cargo binstall stellar-guard                         # downloads the release binary
-cargo install --locked stellar-guard                 # builds from crates.io (Rust 1.88+)
-docker run --rm -v "$PWD:/src" ghcr.io/petermuazu/stellar-guard scan .
-```
-
-Or from the latest source:
+There is no tagged release yet, so install from source (Rust 1.88+):
 
 ```sh
 cargo install --locked --git https://github.com/petermuazu/Soroban-Security-Rules-Toolkit stellar-guard
 ```
 
-Archives are on the [releases page](https://github.com/petermuazu/Soroban-Security-Rules-Toolkit/releases)
-with SHA-256 checksums, a CycloneDX SBOM and signed build provenance:
+Or build the Docker image locally (no Rust toolchain needed on the host):
 
 ```sh
-gh attestation verify stellar-guard-v0.2.0-x86_64-unknown-linux-musl.tar.gz \
-  --repo petermuazu/Soroban-Security-Rules-Toolkit
+docker build -t stellar-guard https://github.com/petermuazu/Soroban-Security-Rules-Toolkit.git
+docker run --rm -v "$PWD:/src" stellar-guard scan .
 ```
 
-As a [pre-commit](https://pre-commit.com) hook:
+As a [pre-commit](https://pre-commit.com) hook (pin `rev` to a commit SHA until the first tag):
 
 ```yaml
 - repo: https://github.com/petermuazu/Soroban-Security-Rules-Toolkit
-  rev: v0.2.0
+  rev: <commit-sha>
   hooks:
     - id: stellar-guard          # uses an installed binary
     # - id: stellar-guard-docker # or builds the Docker image; no Rust toolchain needed
 ```
+
+> [!NOTE]
+> The release pipeline is ready but not yet run. From the first release (v0.1.0) on, prebuilt
+> binaries for Linux, macOS and Windows will be on the
+> [releases page](https://github.com/petermuazu/Soroban-Security-Rules-Toolkit/releases) with SHA-256
+> checksums, a CycloneDX SBOM and signed build provenance, and `cargo binstall stellar-guard`,
+> `cargo install stellar-guard` and `ghcr.io/petermuazu/stellar-guard` will work. Tracked in
+> [#53](https://github.com/petermuazu/Soroban-Security-Rules-Toolkit/issues/53)–[#55](https://github.com/petermuazu/Soroban-Security-Rules-Toolkit/issues/55).
 
 ## Usage
 
@@ -144,7 +143,7 @@ permissions:
   security-events: write
 steps:
   - uses: actions/checkout@v4
-  - uses: petermuazu/Soroban-Security-Rules-Toolkit/integrations/github-action@v0.1.0
+  - uses: petermuazu/Soroban-Security-Rules-Toolkit/integrations/github-action@main  # pin to a release tag once v0.1.0 is published
     with:
       path: contracts
 ```

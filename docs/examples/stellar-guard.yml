@@ -19,7 +19,7 @@ jobs:
 
       - name: stellar-guard
         id: guard
-        uses: petermuazu/Soroban-Security-Rules-Toolkit/integrations/github-action@v0.1.0
+        uses: petermuazu/Soroban-Security-Rules-Toolkit/integrations/github-action@main  # pin to a release tag once v0.1.0 is published
         with:
           # Directory (or directories, space separated) containing your contracts.
           path: contracts

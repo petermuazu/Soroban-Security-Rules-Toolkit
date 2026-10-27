@@ -11,7 +11,7 @@ permissions:
 
 steps:
   - uses: actions/checkout@v4
-  - uses: petermuazu/Soroban-Security-Rules-Toolkit/integrations/github-action@v0.1.0
+  - uses: petermuazu/Soroban-Security-Rules-Toolkit/integrations/github-action@main  # pin to a release tag once v0.1.0 is published
     with:
       path: contracts
 ```
@@ -43,7 +43,7 @@ steps:
 * **Default:** the action builds stellar-guard from the action's own source with
   `cargo install --locked` (installing Rust if needed) and caches the binary, keyed on the source
   hash. The first run takes about a minute; cached runs take seconds.
-* **`version: v0.1.0`:** downloads the prebuilt binary for the runner (Linux x64/arm64, macOS
+* **`version: v0.1.0`** (available once that release is published): downloads the prebuilt binary for the runner (Linux x64/arm64, macOS
   x64/arm64, Windows x64) from the GitHub release.
 
 ## Notes
