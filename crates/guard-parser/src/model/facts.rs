@@ -276,6 +276,19 @@ impl<'ast> Visit<'ast> for FactsVisitor<'_, '_> {
                     self.facts.outflows.push(span);
                 }
             }
+            // A raw cross-contract `transfer`: `env.invoke_contract(&token, &Symbol::new(&e, "transfer"),
+            // vec![&e, e.current_contract_address().into_val(&e), to.into_val(&e), amount.into_val(&e)])`.
+            "invoke_contract" | "try_invoke_contract" if m.args.len() == 3 => {
+                let func = crate::syntax::compact(&m.args[1]);
+                let names_transfer = func.contains("\"transfer\"")
+                    || crate::syntax::key_names(&m.args[1], self.bindings).iter().any(|n| n == "transfer");
+                let from_contract = first_invoke_arg(&m.args[2], self.bindings, 0).is_some_and(|a| {
+                    resolved_idents(&a, self.bindings).iter().any(|i| i == "current_contract_address")
+                });
+                if names_transfer && from_contract {
+                    self.facts.outflows.push(span);
+                }
+            }
             _ => {}
         }
         let op = storage_op(m, self.bindings);
@@ -483,6 +496,26 @@ impl<'ast> Visit<'ast> for FactsVisitor<'_, '_> {
 
 /// `true` if a key constructor takes a runtime value (`DataKey::Balance(user)`),
 /// not only fixed ones: `Symbol::new(&e, ADMIN_KEY)` names a single key.
+/// The first value of a raw `invoke_contract` argument list, i.e. the `from` of a `transfer`:
+/// `vec![&e, from, ..]`, `(from, ..).into_val(&e)`, or a local bound to either.
+fn first_invoke_arg(expr: &Expr, bindings: &Bindings<'_>, depth: usize) -> Option<Expr> {
+    match crate::syntax::strip(expr) {
+        Expr::Macro(m) if crate::syntax::macro_name(&m.mac) == "vec" => {
+            crate::syntax::macro_args(&m.mac).into_iter().nth(1)
+        }
+        Expr::Tuple(t) => t.elems.first().cloned(),
+        Expr::MethodCall(c) if c.method == "into_val" || c.method == "into" => {
+            first_invoke_arg(&c.receiver, bindings, depth)
+        }
+        e if depth < 4 => {
+            let local = crate::syntax::as_local_ident(e)?;
+            let init = bindings.get(&local, Span::of(e).start)?;
+            first_invoke_arg(init, bindings, depth + 1)
+        }
+        _ => None,
+    }
+}
+
 fn call_takes_values(c: &syn::ExprCall) -> bool {
     fn fixed(e: &Expr) -> bool {
         match crate::syntax::strip(e) {

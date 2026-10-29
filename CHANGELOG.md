@@ -14,6 +14,13 @@ are listed under **Changed**.
 
 ### Changed
 
+- **Files that cannot be parsed now fail the scan** (exit status 1) unless `--fail-on never`,
+  `--allow-parse-failures` or `allow-parse-failures = true` is set. Before, an unparseable file was
+  skipped with a warning and the run could pass CI without analyzing it.
+- SG-001 reports upgrades and privileged writes whose only authorization is `require_auth()` on a
+  caller-supplied address that is never checked against a stored admin or role
+  (`caller.require_auth(); set(&DataKey::Admin, &new_admin)`). No new findings on the four
+  validation codebases.
 - Packages are renamed for crates.io: the CLI package is `stellar-guard` (was `guard-cli`; use
   `-p stellar-guard`), libraries are `stellar-guard-*`. Rust import paths (`guard_engine`, …) are unchanged.
 - SG-001 no longer trusts a helper because of its name alone (`require_admin`, `check_owner_auth`, …)

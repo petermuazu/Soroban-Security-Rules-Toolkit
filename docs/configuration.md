@@ -23,6 +23,10 @@ min-confidence = "low"
 # test-support crates whose regular dependencies enable `testutils`).
 include-tests = false
 
+# Files that cannot be parsed are reported but not analyzed. By default they make `scan` exit with
+# status 1 (unless fail-on = "never"), so an unanalyzed file never passes CI silently.
+allow-parse-failures = false
+
 # Extra glob patterns to skip, relative to each scanned path.
 exclude = ["src/generated/**"]
 
@@ -63,6 +67,7 @@ Words are matched case-insensitively against the `_`/camel-case words of identif
 | `fail-on` | `--fail-on <level>` |
 | `min-confidence` | `--min-confidence <level>` |
 | `include-tests` | `--include-tests` |
+| `allow-parse-failures` | `--allow-parse-failures` |
 | `exclude` | `--exclude <glob>` (repeatable) |
 | `auth-functions` | `--auth-fn <name>` (repeatable / comma separated) |
 | `[rules.X] enabled = false` | `--disable X` |
