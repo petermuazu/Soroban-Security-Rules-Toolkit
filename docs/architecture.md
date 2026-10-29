@@ -103,9 +103,14 @@ Renders a `ScanReport`:
 ## Design decisions
 
 * **Source-level by default.** Works on any checkout without building the contract or its
-  dependencies, in milliseconds. `scan --expand-macros` optionally runs `cargo expand` once per
-  Cargo crate before analysis; unavailable or failing expansions fall back to the original source.
-  Findings from expanded output use the crate's primary source path and expanded line numbers.
+  dependencies, in milliseconds. `scan --expand-macros` also runs `cargo expand` once per Cargo
+  crate, saves the output to `<crate>/target/stellar-guard/expanded/<name>.rs` and analyzes it as a
+  second pass (`Engine::scan_with_expansion`). Findings from the original source are kept as they
+  are; an expanded finding is added only when the original pass neither reported nor suppressed the
+  same rule in the same function, so hand-written code keeps its locations and its inline
+  suppressions (which `cargo expand` strips). Unavailable or failing expansions fall back to the
+  original source. Expansion builds the crate, running its build scripts and proc macros, so the CLI
+  warns that it is only for trusted code.
   Analysis still has no type information, so rules compensate with naming heuristics and report a
   confidence level.
 * **Call resolution by name, narrowed by path.** A call matches same-named functions, narrowed by

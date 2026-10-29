@@ -283,11 +283,13 @@ pub fn update(e: Env) { write_admin!(e); }\n",
     let output = scan(&[dir.path().to_str().unwrap(), "--expand-macros", "--rule", "SG-002"]).get_output().clone();
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("use it only on code you trust"), "{stderr}");
     if stderr.contains("cargo-expand is not installed") || stderr.contains("cargo is not available") {
         assert_eq!(output.status.code(), Some(0));
     } else {
         assert_eq!(output.status.code(), Some(1), "{stderr}");
         assert!(stdout.contains("warning[SG-002]"), "{stdout}");
-        assert!(stdout.contains("(cargo expand)"), "{stdout}");
+        assert!(stdout.contains("target/stellar-guard/expanded/macro-contract.rs"), "{stdout}");
+        assert!(dir.path().join("target/stellar-guard/expanded/macro-contract.rs").is_file());
     }
 }

@@ -704,4 +704,36 @@ mod tests {
         assert_eq!(m.facts[m.by_name("w")[0]].outflows.len(), 1);
         assert_eq!(m.facts[m.by_name("d")[0]].outflows.len(), 0);
     }
+
+    #[test]
+    fn raw_invoke_contract_transfers_are_outflows() {
+        let p = project(
+            r#"
+            #[contractimpl]
+            impl C {
+                pub fn a(e: Env, t: Address, to: Address, amt: i128) {
+                    let args = vec![&e, e.current_contract_address().into_val(&e), to.into_val(&e), amt.into_val(&e)];
+                    e.invoke_contract::<()>(&t, &Symbol::new(&e, "transfer"), args);
+                }
+                pub fn b(e: Env, t: Address, to: Address, amt: i128) {
+                    let me = e.current_contract_address();
+                    let _ = e.try_invoke_contract::<(), Error>(&t, &symbol_short!("transfer"), (me, to, amt).into_val(&e));
+                }
+                pub fn deposit(e: Env, t: Address, from: Address, amt: i128) {
+                    let args = vec![&e, from.into_val(&e), e.current_contract_address().into_val(&e), amt.into_val(&e)];
+                    e.invoke_contract::<()>(&t, &Symbol::new(&e, "transfer"), args);
+                }
+                pub fn other(e: Env, t: Address) {
+                    let args = vec![&e, e.current_contract_address().into_val(&e)];
+                    e.invoke_contract::<i128>(&t, &Symbol::new(&e, "balance"), args);
+                }
+            }
+        "#,
+        );
+        let m = CrateModel::build(&p, 0, &ModelOptions::default());
+        assert_eq!(m.facts[m.by_name("a")[0]].outflows.len(), 1);
+        assert_eq!(m.facts[m.by_name("b")[0]].outflows.len(), 1);
+        assert_eq!(m.facts[m.by_name("deposit")[0]].outflows.len(), 0);
+        assert_eq!(m.facts[m.by_name("other")[0]].outflows.len(), 0);
+    }
 }
