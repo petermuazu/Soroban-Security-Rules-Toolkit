@@ -52,7 +52,7 @@ jobs:
             (cd dist && shasum -a 256 "$name.tar.gz" > "$name.tar.gz.sha256")
           fi
       # Signed SLSA build provenance: `gh attestation verify <archive> --repo <owner>/<repo>`.
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-path: |
             dist/*.tar.gz
@@ -135,7 +135,7 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           sbom: true
           provenance: mode=max
-      - uses: actions/attest-build-provenance@v2
+      - uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/${{ github.repository_owner }}/stellar-guard
           subject-digest: ${{ steps.push.outputs.digest }}
