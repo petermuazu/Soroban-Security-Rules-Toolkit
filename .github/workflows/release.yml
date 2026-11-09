@@ -84,7 +84,7 @@ jobs:
           cargo install --locked cargo-cyclonedx@0.5.7
           cargo cyclonedx --format json --override-filename sbom
           cp crates/guard-cli/sbom.json "dist/stellar-guard-${GITHUB_REF_NAME}.cdx.json"
-      - uses: actions/attest-sbom@v2
+      - uses: actions/attest-sbom@v4
         with:
           subject-path: |
             dist/*.tar.gz
